@@ -1,0 +1,212 @@
+---
+title: "Tugas Praktikum 3 Analisis Regresi"
+author: "Arifatu Dzikra"
+date: "`r Sys.Date()`"
+output:
+  rmdformats::readthedown
+---
+
+# DATA
+## Pembacaan Data
+```{r}
+library(dplyr)
+library(knitr)
+
+# Path file
+user_path <- "C:/Users/HP/Downloads/Tugas Individu Anreg 2_Arifatu Dzikra - Data Statistik BPS Terbaru dan Relevan.csv"
+
+# Membaca data (base R agar aman saat knit)
+dt_full <- read.csv(user_path, stringsAsFactors = FALSE)
+
+# Melihat nama kolom
+names(dt_full)
+```
+
+# MEMILIH VARIABEL
+## Menentukan X (IPM) dan Y (Persentase Kemiskinan)
+```{r}
+# Deteksi otomatis kolom
+col_x <- grep("ipm|indeks pembangunan", names(dt_full), ignore.case = TRUE, value = TRUE)[1]
+col_y <- grep("kemiskin|persentase", names(dt_full), ignore.case = TRUE, value = TRUE)[1]
+
+# Mapping variabel
+dt <- dt_full %>%
+  mutate(
+    X = as.numeric(.data[[col_x]]),
+    Y = as.numeric(.data[[col_y]])
+  ) %>%
+  filter(!is.na(X) & !is.na(Y))
+
+n <- nrow(dt)
+
+cat("Jumlah amatan =", n, "\n")
+```
+
+# STATISTIK DESKRIPTIF
+## Ringkasan IPM dan Persentase Kemiskinan
+```{r}
+x <- dt$X
+y <- dt$Y
+
+data.frame(
+  Variabel = c("IPM","Persentase Kemiskinan"),
+  Mean = c(mean(x), mean(y)),
+  SD = c(sd(x), sd(y)),
+  n = c(n,n)
+)
+```
+
+# MODEL REGRESI LINEAR
+## Estimasi Parameter
+```{r}
+model <- lm(y ~ x, data = dt)
+summary(model)
+
+b0 <- coef(model)[1]
+b1 <- coef(model)[2]
+
+cat("Persamaan regresi:\n")
+cat("Y_duga =", round(b0,6), "+", round(b1,6), "X\n")
+```
+# TABEL SIDIK RAGAM
+# Anova
+```{r}
+anova_model <- anova(model)
+anova_model
+```
+
+# PENGURAIAN KERAGAMAN
+## Scatterplot dan Garis Regresi
+```{r}
+library(ggplot2)
+
+ggplot(dt, aes(x = X, y = Y)) +
+  
+  # Titik scatter
+  geom_point(color = "#14b8a6", size = 3, alpha = 0.9) +
+  
+  # Garis regresi
+  geom_smooth(method = "lm", se = FALSE, color = "#0f766e", linewidth = 1.5) +
+  
+  # Judul dan label
+  labs(
+    title = "Hubungan IPM dan Persentase Kemiskinan",
+    subtitle = "Regresi Linear Sederhana (n = 34)",
+    x = "Indeks Pembangunan Manusia (IPM)",
+    y = "Persentase Kemiskinan (%)"
+  ) +
+  
+  # Tema gelap custom
+  theme_minimal() +
+  theme(
+    plot.background = element_rect(fill = "#0f172a", color = NA),
+    panel.background = element_rect(fill = "#111827", color = NA),
+    panel.grid.major = element_line(color = "#1f2937"),
+    panel.grid.minor = element_line(color = "#1f2937"),
+    text = element_text(color = "#e5e7eb"),
+    axis.text = element_text(color = "#d1d5db"),
+    axis.title = element_text(color = "#14b8a6", size = 12, face = "bold"),
+    plot.title = element_text(color = "#2dd4bf", size = 16, face = "bold"),
+    plot.subtitle = element_text(color = "#a7f3d0")
+  )
+```
+
+## JKR, JKG, JKT, KTG dan Galat Baku
+```{r}
+yhat <- predict(model)
+ybar <- mean(y)
+
+JKR <- sum((yhat - ybar)^2)
+JKG <- sum((y - yhat)^2)
+JKT <- sum((y - ybar)^2)
+
+KTG <- JKG/(n-2)
+Se  <- sqrt(KTG)
+
+data.frame(
+  Komponen = c("JKR","JKG","JKT","KTG","Se"),
+  Nilai = c(JKR,JKG,JKT,KTG,Se)
+)
+```
+## KOEFISIEN DETERMINASI
+```{r}
+R2 <- summary(model)$r.squared
+AdjR2 <- summary(model)$adj.r.squared
+
+cat("R-squared =", R2, "\n")
+cat("Adjusted R-squared =", AdjR2, "\n")
+```
+
+# UJI HIPOTESIS PARAMETER 
+## Uji t untuk β0 dan β1
+```{r}
+se_b1 <- summary(model)$coefficients[2,2]
+se_b0 <- summary(model)$coefficients[1,2]
+
+t_b1 <- b1/se_b1
+t_b0 <- b0/se_b0
+
+p_b1 <- summary(model)$coefficients[2,4]
+p_b0 <- summary(model)$coefficients[1,4]
+
+alpha <- 0.05
+t_tabel <- qt(0.975, df=n-2)
+
+data.frame(
+  Parameter=c("b0","b1"),
+  Estimate=c(b0,b1),
+  SE=c(se_b0,se_b1),
+  t_hitung=c(t_b0,t_b1),
+  p_value=c(p_b0,p_b1),
+  t_tabel=t_tabel
+)
+```
+
+# SELANG KEPERCAYAAN PARAMETER
+## Interval 95%
+```{r}
+CI_b0 <- b0 + c(-1,1)*t_tabel*se_b0
+CI_b1 <- b1 + c(-1,1)*t_tabel*se_b1
+
+data.frame(
+  Parameter=c("b0","b1"),
+  Lower=c(CI_b0[1],CI_b1[1]),
+  Upper=c(CI_b0[2],CI_b1[2])
+)
+```
+
+# PREDIKSI
+## Selang Kepercayaan Rataan dan Selang Prediksi Individu
+```{r}
+pred_conf <- predict(model, interval="confidence")
+pred_pred <- predict(model, interval="prediction")
+
+head(data.frame(
+  X=x,
+  Y=y,
+  Y_hat=pred_conf[,1],
+  CI_Lower=pred_conf[,2],
+  CI_Upper=pred_conf[,3],
+  PI_Lower=pred_pred[,2],
+  PI_Upper=pred_pred[,3]
+))
+```
+# INTERPRETASI HASIL REGRESI
+
+Berdasarkan hasil estimasi diperoleh persamaan regresi:
+
+Y_duga = b0 + b1 X
+
+Koefisien slope (b1) menunjukkan perubahan rata-rata persentase kemiskinan untuk setiap kenaikan satu satuan IPM.
+
+Jika p-value b1 < 0,05 maka terdapat bukti statistik bahwa IPM berpengaruh signifikan terhadap persentase kemiskinan pada taraf nyata 5%. Jika koefisien bernilai negatif maka peningkatan IPM menurunkan tingkat kemiskinan; jika bernilai positif maka peningkatan IPM meningkatkan tingkat kemiskinan.
+
+Nilai R² menunjukkan proporsi variasi persentase kemiskinan yang dapat dijelaskan oleh IPM. Semakin besar R², semakin besar kemampuan model dalam menjelaskan variasi data.
+
+KTG dan Se merepresentasikan ragam dan simpangan baku galat model. Nilai yang kecil menunjukkan model memiliki kesalahan prediksi yang relatif kecil.
+
+Selang kepercayaan parameter memberikan rentang nilai yang diyakini memuat parameter populasi dengan tingkat kepercayaan 95%.
+
+Selang kepercayaan rataan menunjukkan ketelitian dugaan nilai rata-rata respon, sedangkan selang prediksi individu menunjukkan rentang kemungkinan nilai observasi baru pada tingkat IPM tertentu.
+
+Secara keseluruhan, model regresi linear ini menggambarkan hubungan linier antara IPM dan persentase kemiskinan pada 34 amatan data provinsi, dengan signifikansi dan kekuatan hubungan ditentukan oleh nilai p-value dan R² yang diperoleh dari hasil estimasi.
